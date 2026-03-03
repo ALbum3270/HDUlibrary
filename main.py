@@ -184,7 +184,7 @@ class SeatAutoBooker:
             url = 'https://sctapi.ftqq.com/{0}.send'.format(self.SCKey)
             data = {
                 'title': message,
-                desp: desp,
+                'desp': desp,
             }
             try:
                 r = requests.post(url, data=data)
@@ -225,6 +225,8 @@ if __name__ == "__main__":
         s.driver.quit()
         logging.info('Getting user info unsuccessful')
         exit(-1)
-    s.book_favorite_seat(user_config=user_config, seat_config=seat_config)
+    result = s.book_favorite_seat(user_config=user_config, seat_config=seat_config)
+    if result and result[0] is not None:
+        s.wechatNotice("图书馆预约结果", desp="CODE: {} | {}".format(result[0], result[1]))
     s.driver.quit()
     logging.info('End of the program')
