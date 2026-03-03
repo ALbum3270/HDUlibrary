@@ -50,10 +50,18 @@ class SeatAutoBooker:
             print("没有Server酱的key,将不会推送消息")
 
         chrome_options = Options()
-        chrome_options.add_argument('--headless')
+        chrome_options.add_argument('--headless=new')
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_argument('--window-size=1920,1080')
+        chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
         self.driver = webdriver.Chrome(options=chrome_options)
+        self.driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
+            'source': 'Object.defineProperty(navigator, "webdriver", {get: () => undefined})'
+        })
         self.wait = WebDriverWait(self.driver, 10, 0.5)
         self.cookie = None
 
@@ -138,16 +146,23 @@ class SeatAutoBooker:
             self.wait.until(EC.presence_of_element_located(btn_sel))
             logging.debug('找到登录按钮.')
 
-            self.driver.find_element(*un_sel).clear()
-            self.driver.find_element(*un_sel).send_keys(self.un)
+            un_elem = self.driver.find_element(*un_sel)
+            self.driver.execute_script("arguments[0].value = arguments[1];", un_elem, self.un)
+            un_elem.send_keys(' ')
+            un_elem.send_keys('\b')
             logging.info('输入用户名')
 
-            self.driver.find_element(*pwd_sel).clear()
-            self.driver.find_element(*pwd_sel).send_keys(self.pd)
+            pwd_elem = self.driver.find_element(*pwd_sel)
+            self.driver.execute_script("arguments[0].value = arguments[1];", pwd_elem, self.pd)
+            pwd_elem.send_keys(' ')
+            pwd_elem.send_keys('\b')
             logging.info('输入密码')
 
             logging.info('点击登录按钮')
             self.driver.find_element(*btn_sel).click()
+            time.sleep(3)
+            self.driver.save_screenshot("after_login.png")
+            logging.info("当前URL: %s", self.driver.current_url)
             # 等待图书馆 auth cookie 出现，确保登录和重定向全部完成
             WebDriverWait(self.driver, 30).until(
                 lambda d: any(c['name'] == 'auth' for c in d.get_cookies())

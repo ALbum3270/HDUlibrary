@@ -38,3 +38,10 @@ jobs:
           PASSWORD: ${{ secrets.PASSWORD }}
           SCKEY: ${{ secrets.SCKEY }}
         run: python main.py
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: login-screenshot
+          path: after_login.png
+          if-no-files-found: ignore
