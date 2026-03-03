@@ -1,17 +1,11 @@
 import requests
+import re
 import yaml
 import random
 from datetime import datetime, timedelta
 import json
 import os
 import logging
-
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.wait import WebDriverWait
 import time
 
 
@@ -49,13 +43,7 @@ class SeatAutoBooker:
         except KeyError:
             print("没有Server酱的key,将不会推送消息")
 
-        chrome_options = Options()
-        chrome_options.add_argument('--headless=new')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--window-size=1920,1080')
-        self.driver = webdriver.Chrome(options=chrome_options)
-        self.wait = WebDriverWait(self.driver, 10, 0.5)
+        self.driver = None  # 不再使用 Selenium，保留属性供兼容
         self.cookie = None
 
         self.cfg = booker_config
@@ -107,82 +95,71 @@ class SeatAutoBooker:
         return self.json["CODE"], self.json["MESSAGE"] + " 座位:{}".format(seat)
 
     def login(self):
-        logging.info('Login in')
+        logging.info('使用 requests 进行 CAS 登录')
 
-        # 旧界面选择器
-        old_un_selector = (By.NAME, "login_name")
-        old_pwd_selector = (By.XPATH, """//*[@id="react-root"]/div/div/div[1]/div[2]/div/div[1]/div[2]/div/div/div/div/div[1]/div[2]/div/div[3]/div/div[2]/input""")
-        old_btn_selector = (By.XPATH, """//*[@id="react-root"]/div/div/div[1]/div[2]/div/div[1]/div[2]/div/div/div/div/div[1]/div[3]""")
-        # 新界面选择器（杭电统一认证 sso.hdu.edu.cn）
-        new_un_selector = (By.NAME, "username")
-        new_pwd_selector = (By.CSS_SELECTOR, "input[type='password']")
-        new_btn_selector = (By.CSS_SELECTOR, "button[type='submit']")
+        session = requests.Session()
+        session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9',
+        })
 
         try:
-            logging.info('开始登陆...')
-            self.driver.get("https://hdu.huitu.zhishulib.com/")
-            logging.debug('打开网站.')
-            time.sleep(2)
+            # Step 1: 访问图书馆首页，触发重定向到 SSO
+            resp = session.get("https://hdu.huitu.zhishulib.com/", allow_redirects=True)
+            logging.info('访问图书馆首页后URL: %s', resp.url)
 
-            # 根据当前 URL 判断是哪种登录界面
-            if "sso.hdu.edu.cn" in self.driver.current_url:
-                logging.info('检测到新版统一认证登录界面')
-                un_sel, pwd_sel, btn_sel = new_un_selector, new_pwd_selector, new_btn_selector
-            else:
-                logging.info('检测到旧版图书馆登录界面')
-                un_sel, pwd_sel, btn_sel = old_un_selector, old_pwd_selector, old_btn_selector
+            if "sso.hdu.edu.cn" not in resp.url:
+                # 未重定向到SSO（已登录或旧接口）
+                logging.info('未重定向到SSO，直接获取Cookie')
+                self.cookie = ';'.join(f'{k}={v}' for k, v in session.cookies.get_dict().items())
+                self.cfg["headers"]['Cookie'] = self.cookie
+                logging.info('登录成功！')
+                return 0
 
-            self.wait.until(EC.presence_of_element_located(un_sel))
-            logging.debug('找到用户名输入框.')
-            self.wait.until(EC.presence_of_element_located(pwd_sel))
-            logging.debug('找到密码输入框.')
-            self.wait.until(EC.presence_of_element_located(btn_sel))
-            logging.debug('找到登录按钮.')
+            login_url = resp.url  # https://sso.hdu.edu.cn/login?service=...
 
-            # 用 React 原生 setter + input/change 事件触发受控输入更新
-            _react_set = """
-                var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                setter.call(arguments[0], arguments[1]);
-                arguments[0].dispatchEvent(new Event('input', {bubbles:true}));
-                arguments[0].dispatchEvent(new Event('change', {bubbles:true}));
-            """
-            un_elem = self.wait.until(EC.element_to_be_clickable(un_sel))
-            un_elem.click()
-            self.driver.execute_script(_react_set, un_elem, self.un)
-            logging.info('输入用户名: %s', self.un)
+            # Step 2: 解析登录表单中的所有隐藏字段（lt, execution, _csrf 等）
+            hidden_fields = {}
+            for match in re.finditer(r'<input[^>]+type=["\']hidden["\'][^>]*/?>',
+                                      resp.text, re.IGNORECASE):
+                name_m = re.search(r'name=["\']([^"\'>]+)["\']', match.group())
+                val_m  = re.search(r'value=["\']([^"\'>]*)["\']', match.group())
+                if name_m:
+                    hidden_fields[name_m.group(1)] = val_m.group(1) if val_m else ''
+            logging.info('SSO隐藏字段: %s', list(hidden_fields.keys()))
 
-            pwd_elem = self.wait.until(EC.element_to_be_clickable(pwd_sel))
-            pwd_elem.click()
-            self.driver.execute_script(_react_set, pwd_elem, self.pd)
-            logging.info('输入密码完成')
-
-            # 登录前截图，确认表单已填好
-            self.driver.save_screenshot("before_submit.png")
-            logging.info('登录前截图已保存')
-
-            logging.info('点击登录按钮')
-            btn = self.wait.until(EC.element_to_be_clickable(btn_sel))
-            btn.click()
-            time.sleep(3)
-            self.driver.save_screenshot("after_login.png")
-            logging.info("点击后URL: %s", self.driver.current_url)
-            with open('page_source.html', 'w', encoding='utf-8') as f:
-                f.write(self.driver.page_source)
-            logging.info('页面源码已保存')
-            # 等待图书馆 auth cookie 出现，确保登录和重定向全部完成
-            WebDriverWait(self.driver, 30).until(
-                lambda d: any(c['name'] == 'auth' for c in d.get_cookies())
+            # Step 3: POST 登录表单
+            post_data = {
+                'username': self.un,
+                'password': self.pd,
+                '_eventId': 'submit',
+                **hidden_fields,
+            }
+            resp = session.post(
+                login_url, data=post_data, allow_redirects=True,
+                headers={'Referer': login_url, 'Origin': 'https://sso.hdu.edu.cn'}
             )
-            logging.info('Cookie获取成功')
-            cookie_list = self.driver.get_cookies()
-            self.cookie = ";".join([item["name"] + "=" + item["value"] for item in cookie_list])
-            self.cfg["headers"]['Cookie'] = self.cookie
+            logging.info('POST后URL: %s', resp.url)
 
-            logging.info("登录成功！")
+            if "sso.hdu.edu.cn" in resp.url:
+                # 仍在SSO页面 → 登录失败，保存响应用于调试
+                with open('sso_response.html', 'w', encoding='utf-8') as f:
+                    f.write(resp.text)
+                logging.error('登录失败，仍停留在SSO页面，已保存sso_response.html')
+                return -1
+
+            # Step 4: 提取 Cookie
+            cookie_dict = session.cookies.get_dict()
+            self.cookie = ';'.join(f'{k}={v}' for k, v in cookie_dict.items())
+            self.cfg["headers"]['Cookie'] = self.cookie
+            logging.info('Cookie获取成功，键: %s', list(cookie_dict.keys()))
+            logging.info('登录成功！')
+            return 0
+
         except Exception as e:
-            logging.error(f"登录失败：{e}")
+            logging.error(f'登录失败：{e}')
             return -1
-        return 0
 
     def get_user_info(self):
         logging.info('Getting user info')
@@ -253,5 +230,6 @@ if __name__ == "__main__":
     result = s.book_favorite_seat(user_config=user_config, seat_config=seat_config)
     if result and result[0] is not None:
         s.wechatNotice("图书馆预约结果", desp="CODE: {} | {}".format(result[0], result[1]))
-    s.driver.quit()
+    if s.driver:
+        s.driver.quit()
     logging.info('End of the program')
