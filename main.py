@@ -53,7 +53,7 @@ class SeatAutoBooker:
         chrome_options.add_argument('--headless')
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
-        self.driver = webdriver.Chrome(service=Service('/usr/local/bin/chromedriver'), options=chrome_options)
+        self.driver = webdriver.Chrome(options=chrome_options)
         self.wait = WebDriverWait(self.driver, 10, 0.5)
         self.cookie = None
 
@@ -108,33 +108,31 @@ class SeatAutoBooker:
     def login(self):
         logging.info('Login in')
 
-        pwd_path_selector = """//*[@id="react-root"]/div/div/div[1]/div[2]/div/div[1]/div[2]/div/div/div/div/div[1]/div[2]/div/div[3]/div/div[2]/input"""
-        button_path_selector = """//*[@id="react-root"]/div/div/div[1]/div[2]/div/div[1]/div[2]/div/div/div/div/div[1]/div[3]"""
-
         try:
             logging.info('开始登陆...')
 
             self.driver.get("https://hdu.huitu.zhishulib.com/")
             logging.debug('打开网站.')
 
-            self.wait.until(EC.presence_of_element_located((By.NAME, "login_name")))
+            # 等待跳转到杭电统一认证(sso.hdu.edu.cn)后的用户名输入框
+            self.wait.until(EC.presence_of_element_located((By.NAME, "username")))
             logging.debug('找到用户名输入框.')
 
-            self.wait.until(EC.presence_of_element_located((By.XPATH, pwd_path_selector)))
+            self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='password']")))
             logging.debug('找到密码输入框.')
 
-            self.wait.until(EC.presence_of_element_located((By.XPATH, button_path_selector)))
+            self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "button[type='submit']")))
             logging.debug('找到登录按钮.')
 
-            self.driver.find_element(By.NAME, 'login_name').clear()
-            self.driver.find_element(By.NAME, 'login_name').send_keys(self.un)  # 传送帐号
+            self.driver.find_element(By.NAME, 'username').clear()
+            self.driver.find_element(By.NAME, 'username').send_keys(self.un)
             logging.info('输入用户名')
 
-            self.driver.find_element(By.XPATH, pwd_path_selector).clear()
-            self.driver.find_element(By.XPATH, pwd_path_selector).send_keys(self.pd)  # 输入密码
+            self.driver.find_element(By.CSS_SELECTOR, "input[type='password']").clear()
+            self.driver.find_element(By.CSS_SELECTOR, "input[type='password']").send_keys(self.pd)
             logging.info('输入密码')
             logging.info('点击登录按钮')
-            self.driver.find_element(By.XPATH, button_path_selector).click()
+            self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
             time.sleep(5)
             cookie_list = self.driver.get_cookies()
             self.cookie = ";".join([item["name"] + "=" + item["value"] + "" for item in cookie_list])
