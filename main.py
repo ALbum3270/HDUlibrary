@@ -108,34 +108,49 @@ class SeatAutoBooker:
     def login(self):
         logging.info('Login in')
 
+        # 旧界面选择器
+        old_un_selector = (By.NAME, "login_name")
+        old_pwd_selector = (By.XPATH, """//*[@id="react-root"]/div/div/div[1]/div[2]/div/div[1]/div[2]/div/div/div/div/div[1]/div[2]/div/div[3]/div/div[2]/input""")
+        old_btn_selector = (By.XPATH, """//*[@id="react-root"]/div/div/div[1]/div[2]/div/div[1]/div[2]/div/div/div/div/div[1]/div[3]""")
+        # 新界面选择器（杭电统一认证 sso.hdu.edu.cn）
+        new_un_selector = (By.NAME, "username")
+        new_pwd_selector = (By.CSS_SELECTOR, "input[type='password']")
+        new_btn_selector = (By.CSS_SELECTOR, "button[type='submit']")
+
         try:
             logging.info('开始登陆...')
-
             self.driver.get("https://hdu.huitu.zhishulib.com/")
             logging.debug('打开网站.')
+            time.sleep(2)
 
-            # 等待跳转到杭电统一认证(sso.hdu.edu.cn)后的用户名输入框
-            self.wait.until(EC.presence_of_element_located((By.NAME, "username")))
+            # 根据当前 URL 判断是哪种登录界面
+            if "sso.hdu.edu.cn" in self.driver.current_url:
+                logging.info('检测到新版统一认证登录界面')
+                un_sel, pwd_sel, btn_sel = new_un_selector, new_pwd_selector, new_btn_selector
+            else:
+                logging.info('检测到旧版图书馆登录界面')
+                un_sel, pwd_sel, btn_sel = old_un_selector, old_pwd_selector, old_btn_selector
+
+            self.wait.until(EC.presence_of_element_located(un_sel))
             logging.debug('找到用户名输入框.')
-
-            self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='password']")))
+            self.wait.until(EC.presence_of_element_located(pwd_sel))
             logging.debug('找到密码输入框.')
-
-            self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "button[type='submit']")))
+            self.wait.until(EC.presence_of_element_located(btn_sel))
             logging.debug('找到登录按钮.')
 
-            self.driver.find_element(By.NAME, 'username').clear()
-            self.driver.find_element(By.NAME, 'username').send_keys(self.un)
+            self.driver.find_element(*un_sel).clear()
+            self.driver.find_element(*un_sel).send_keys(self.un)
             logging.info('输入用户名')
 
-            self.driver.find_element(By.CSS_SELECTOR, "input[type='password']").clear()
-            self.driver.find_element(By.CSS_SELECTOR, "input[type='password']").send_keys(self.pd)
+            self.driver.find_element(*pwd_sel).clear()
+            self.driver.find_element(*pwd_sel).send_keys(self.pd)
             logging.info('输入密码')
+
             logging.info('点击登录按钮')
-            self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
+            self.driver.find_element(*btn_sel).click()
             time.sleep(5)
             cookie_list = self.driver.get_cookies()
-            self.cookie = ";".join([item["name"] + "=" + item["value"] + "" for item in cookie_list])
+            self.cookie = ";".join([item["name"] + "=" + item["value"] for item in cookie_list])
             self.cfg["headers"]['Cookie'] = self.cookie
 
             logging.info("登录成功！")
