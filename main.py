@@ -148,7 +148,9 @@ class SeatAutoBooker:
 
             logging.info('点击登录按钮')
             self.driver.find_element(*btn_sel).click()
-            time.sleep(5)
+            # 等待页面跳转回图书馆域名
+            self.wait.until(EC.url_contains("hdu.huitu.zhishulib.com"))
+            time.sleep(2)
             cookie_list = self.driver.get_cookies()
             self.cookie = ";".join([item["name"] + "=" + item["value"] for item in cookie_list])
             self.cfg["headers"]['Cookie'] = self.cookie
