@@ -1,5 +1,4 @@
 import requests
-import re
 import yaml
 import random
 from datetime import datetime, timedelta
@@ -60,8 +59,8 @@ class SeatAutoBooker:
             start_time = datetime.now().replace(hour=21-time_zone, minute=0, second=0, microsecond=0)
             end_time = datetime.now().replace(hour=21-time_zone, minute=15, second=0, microsecond=0)
         start_time = start_time - timedelta(minutes=self.cfg["cron-delta-minutes"])
-        if datetime.now() < start_time or datetime.now() > end_time:
-            return -1, "未到预约时间"
+        # if datetime.now() < start_time or datetime.now() > end_time:
+        #     return -1, "未到预约时间"
         logging.info('Booking favorite seat')
         retry_sleep_time = timedelta(minutes=self.cfg["cron-delta-minutes"]).seconds*2/(self.cfg["max-retry"]-2) - 10
         for tried_times in range(self.cfg["max-retry"]):
@@ -95,71 +94,77 @@ class SeatAutoBooker:
         return self.json["CODE"], self.json["MESSAGE"] + " 座位:{}".format(seat)
 
     def login(self):
-        logging.info('使用 requests 进行 CAS 登录')
+        from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+        logging.info('使用 Playwright 进行登录')
 
-        session = requests.Session()
-        session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Accept-Language': 'zh-CN,zh;q=0.9',
-        })
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-dev-shm-usage']
+            )
+            context = browser.new_context(
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            )
+            page = context.new_page()
 
-        try:
-            # Step 1: 访问图书馆首页，触发重定向到 SSO
-            resp = session.get("https://hdu.huitu.zhishulib.com/", allow_redirects=True)
-            logging.info('访问图书馆首页后URL: %s', resp.url)
+            try:
+                # 访问需登录的URL，触发SSO重定向
+                page.goto(
+                    'https://hdu.huitu.zhishulib.com/User/Index/hduCASLogin'
+                    '?forward=%2FSpace%2FCategory%2Fredirect%3Fcategory_id%3D591',
+                    wait_until='networkidle', timeout=45000
+                )
+                logging.info('当前URL: %s', page.url)
 
-            if "sso.hdu.edu.cn" not in resp.url:
-                # 未重定向到SSO（已登录或旧接口）
-                logging.info('未重定向到SSO，直接获取Cookie')
-                self.cookie = ';'.join(f'{k}={v}' for k, v in session.cookies.get_dict().items())
-                self.cfg["headers"]['Cookie'] = self.cookie
+                if 'sso.hdu.edu.cn' in page.url:
+                    logging.info('检测到SSO登录页面')
+
+                    # 用role定位可见的文本框（无需中文字符，避免编码问题）
+                    un_box = page.get_by_role('textbox').first
+                    pwd_box = page.get_by_role('textbox').nth(1)
+                    un_box.wait_for(state='visible', timeout=30000)
+                    logging.info('登录表单已加载')
+                    page.screenshot(path='before_submit.png')
+
+                    un_box.fill(self.un)
+                    pwd_box.fill(self.pd)
+                    logging.info('表单已填写，用户: %s', self.un)
+
+                    page.click('button[type="submit"]')
+                    logging.info('已点击登录按钮')
+
+                    # 等待真正跳转回图书馆（host匹配，不含sso的service参数误匹配）
+                    try:
+                        page.wait_for_url('*://hdu.huitu.zhishulib.com/**', timeout=30000)
+                    except PWTimeout:
+                        page.screenshot(path='after_login.png')
+                        with open('page_source.html', 'w', encoding='utf-8') as f:
+                            f.write(page.content())
+                        logging.error('登录超时，仍在页面: %s', page.url)
+                        return -1
+
+                page.screenshot(path='after_login.png')
+                logging.info('登录后URL: %s', page.url)
+
+                # 提取Cookie
+                cookies = context.cookies()
+                self.cookie = ';'.join(f"{c['name']}={c['value']}" for c in cookies)
+                self.cfg['headers']['Cookie'] = self.cookie
+                logging.info('Cookie获取成功，键: %s', [c['name'] for c in cookies])
                 logging.info('登录成功！')
                 return 0
 
-            login_url = resp.url  # https://sso.hdu.edu.cn/login?service=...
-
-            # Step 2: 解析登录表单中的所有隐藏字段（lt, execution, _csrf 等）
-            hidden_fields = {}
-            for match in re.finditer(r'<input[^>]+type=["\']hidden["\'][^>]*/?>',
-                                      resp.text, re.IGNORECASE):
-                name_m = re.search(r'name=["\']([^"\'>]+)["\']', match.group())
-                val_m  = re.search(r'value=["\']([^"\'>]*)["\']', match.group())
-                if name_m:
-                    hidden_fields[name_m.group(1)] = val_m.group(1) if val_m else ''
-            logging.info('SSO隐藏字段: %s', list(hidden_fields.keys()))
-
-            # Step 3: POST 登录表单
-            post_data = {
-                'username': self.un,
-                'password': self.pd,
-                '_eventId': 'submit',
-                **hidden_fields,
-            }
-            resp = session.post(
-                login_url, data=post_data, allow_redirects=True,
-                headers={'Referer': login_url, 'Origin': 'https://sso.hdu.edu.cn'}
-            )
-            logging.info('POST后URL: %s', resp.url)
-
-            if "sso.hdu.edu.cn" in resp.url:
-                # 仍在SSO页面 → 登录失败，保存响应用于调试
-                with open('sso_response.html', 'w', encoding='utf-8') as f:
-                    f.write(resp.text)
-                logging.error('登录失败，仍停留在SSO页面，已保存sso_response.html')
+            except Exception as e:
+                try:
+                    page.screenshot(path='error.png')
+                    with open('page_source.html', 'w', encoding='utf-8') as f:
+                        f.write(page.content())
+                except Exception:
+                    pass
+                logging.error('登录失败：%s', e)
                 return -1
-
-            # Step 4: 提取 Cookie
-            cookie_dict = session.cookies.get_dict()
-            self.cookie = ';'.join(f'{k}={v}' for k, v in cookie_dict.items())
-            self.cfg["headers"]['Cookie'] = self.cookie
-            logging.info('Cookie获取成功，键: %s', list(cookie_dict.keys()))
-            logging.info('登录成功！')
-            return 0
-
-        except Exception as e:
-            logging.error(f'登录失败：{e}')
-            return -1
+            finally:
+                browser.close()
 
     def get_user_info(self):
         logging.info('Getting user info')
@@ -220,11 +225,9 @@ if __name__ == "__main__":
 
     s = SeatAutoBooker(basic_config["SeatAutoBooker"])
     if not s.login() == 0:
-        s.driver.quit()
         logging.info('Login unsuccessful')
         exit(-1)
     if not s.get_user_info() == 0:
-        s.driver.quit()
         logging.info('Getting user info unsuccessful')
         exit(-1)
     result = s.book_favorite_seat(user_config=user_config, seat_config=seat_config)
