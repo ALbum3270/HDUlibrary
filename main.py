@@ -53,15 +53,8 @@ class SeatAutoBooker:
         chrome_options.add_argument('--headless=new')
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
-        chrome_options.add_experimental_option('useAutomationExtension', False)
         self.driver = webdriver.Chrome(options=chrome_options)
-        self.driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
-            'source': 'Object.defineProperty(navigator, "webdriver", {get: () => undefined})'
-        })
         self.wait = WebDriverWait(self.driver, 10, 0.5)
         self.cookie = None
 
@@ -146,23 +139,36 @@ class SeatAutoBooker:
             self.wait.until(EC.presence_of_element_located(btn_sel))
             logging.debug('找到登录按钮.')
 
-            un_elem = self.driver.find_element(*un_sel)
-            self.driver.execute_script("arguments[0].value = arguments[1];", un_elem, self.un)
-            un_elem.send_keys(' ')
-            un_elem.send_keys('\b')
-            logging.info('输入用户名')
+            # 用 React 原生 setter + input/change 事件触发受控输入更新
+            _react_set = """
+                var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                setter.call(arguments[0], arguments[1]);
+                arguments[0].dispatchEvent(new Event('input', {bubbles:true}));
+                arguments[0].dispatchEvent(new Event('change', {bubbles:true}));
+            """
+            un_elem = self.wait.until(EC.element_to_be_clickable(un_sel))
+            un_elem.click()
+            self.driver.execute_script(_react_set, un_elem, self.un)
+            logging.info('输入用户名: %s', self.un)
 
-            pwd_elem = self.driver.find_element(*pwd_sel)
-            self.driver.execute_script("arguments[0].value = arguments[1];", pwd_elem, self.pd)
-            pwd_elem.send_keys(' ')
-            pwd_elem.send_keys('\b')
-            logging.info('输入密码')
+            pwd_elem = self.wait.until(EC.element_to_be_clickable(pwd_sel))
+            pwd_elem.click()
+            self.driver.execute_script(_react_set, pwd_elem, self.pd)
+            logging.info('输入密码完成')
+
+            # 登录前截图，确认表单已填好
+            self.driver.save_screenshot("before_submit.png")
+            logging.info('登录前截图已保存')
 
             logging.info('点击登录按钮')
-            self.driver.find_element(*btn_sel).click()
+            btn = self.wait.until(EC.element_to_be_clickable(btn_sel))
+            btn.click()
             time.sleep(3)
             self.driver.save_screenshot("after_login.png")
-            logging.info("当前URL: %s", self.driver.current_url)
+            logging.info("点击后URL: %s", self.driver.current_url)
+            with open('page_source.html', 'w', encoding='utf-8') as f:
+                f.write(self.driver.page_source)
+            logging.info('页面源码已保存')
             # 等待图书馆 auth cookie 出现，确保登录和重定向全部完成
             WebDriverWait(self.driver, 30).until(
                 lambda d: any(c['name'] == 'auth' for c in d.get_cookies())
