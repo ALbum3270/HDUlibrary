@@ -49,27 +49,38 @@ class SeatAutoBooker:
 
     def book_favorite_seat(self, user_config, seat_config):
         #判断是否到了预约时间
-        # 阅览室晚上9点开始预约，自习室晚上8点半开始预约
+        # 阅览室晚上9点开始预约，自习室晚上8点开始预约
         the_day_after_tomorrow = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][(datetime.now().weekday() + 2) % 7]
         seat_type = seat_config[user_config[the_day_after_tomorrow]['name']]["type"]
         if seat_type == "自习室":
-            start_time = datetime.now().replace(hour=20-time_zone, minute=0, second=0, microsecond=0)
-            end_time = datetime.now().replace(hour=20-time_zone, minute=15, second=0, microsecond=0)
+            open_time = datetime.now().replace(hour=20-time_zone, minute=0, second=0, microsecond=0)
+            deadline  = datetime.now().replace(hour=20-time_zone, minute=15, second=0, microsecond=0)
         else:
-            start_time = datetime.now().replace(hour=21-time_zone, minute=0, second=0, microsecond=0)
-            end_time = datetime.now().replace(hour=21-time_zone, minute=15, second=0, microsecond=0)
-        start_time = start_time - timedelta(minutes=self.cfg["cron-delta-minutes"])
-        if datetime.now() < start_time or datetime.now() > end_time:
+            open_time = datetime.now().replace(hour=21-time_zone, minute=0, second=0, microsecond=0)
+            deadline  = datetime.now().replace(hour=21-time_zone, minute=15, second=0, microsecond=0)
+        # 提前窗口：cron-delta-minutes 分钟前可以启动（用于判断是否太早进来）
+        earliest = open_time - timedelta(minutes=self.cfg["cron-delta-minutes"])
+        if datetime.now() < earliest or datetime.now() > deadline:
             return -1, "未到预约时间"
+        # 如果还没到开放时间，sleep 等到开放
+        wait_sec = (open_time - datetime.now()).total_seconds()
+        if wait_sec > 0:
+            logging.info('距开放还有 %.1f 秒，等待中…', wait_sec)
+            time.sleep(wait_sec)
         logging.info('Booking favorite seat')
-        retry_sleep_time = timedelta(minutes=self.cfg["cron-delta-minutes"]).seconds*2/(self.cfg["max-retry"]-2) - 10
-        for tried_times in range(self.cfg["max-retry"]):
+        tried_times = 0
+        while datetime.now() <= deadline:
             try:
-                return self._book_favorite_seat(user_config, seat_config, tried_times)
+                code, msg = self._book_favorite_seat(user_config, seat_config, tried_times)
+                if str(code) == "0":
+                    return code, msg
+                logging.info('预约未成功（code=%s msg=%s），继续重试…', code, msg)
             except Exception as e:
                 logging.exception(e)
                 print(e.__class__, "尝试第{}次".format(tried_times))
-                time.sleep(retry_sleep_time)
+            tried_times += 1
+            time.sleep(1)
+        return -1, "超过截止时间，预约失败"
 
     def _book_favorite_seat(self, user_config, seat_config, tried_times=0):
         logging.info('Entering _book_favorite_seat method')
