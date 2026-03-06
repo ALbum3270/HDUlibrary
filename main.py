@@ -112,10 +112,19 @@ class SeatAutoBooker:
 
         headers = self.cfg["headers"]
         headers['Cookie'] = self.cookie
-        print(data)
+        # 打印 beginTime 对应的真实时刻，便于验证时间语义
+        bt = datetime(1970, 1, 1, 8, 0, 0) + timedelta(seconds=total_seconds)
+        print("REQUEST_DATA", data)
+        print("BEGIN_TIME_SECONDS", total_seconds, "->", bt, "(naive CST)")
         self.resp = requests.post(self.cfg["target"], data=data, headers=headers)
-        print("HTTP", self.resp.status_code, self.resp.text[:300])
-        self.json = json.loads(self.resp.text)
+        print("HTTP", self.resp.status_code, "len=", len(self.resp.text))
+        print("RESP_HEAD", self.resp.text[:300])
+        try:
+            self.json = self.resp.json()
+        except Exception:
+            print("RESP_NOT_JSON", self.resp.text[:500])
+            raise
+        print("BOOK_RESULT", "CODE=", self.json.get("CODE"), "MSG=", self.json.get("MESSAGE"))
         return self.json["CODE"], self.json["MESSAGE"] + " 座位:{}".format(seat)
 
     def login(self):
