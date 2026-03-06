@@ -85,13 +85,8 @@ class SeatAutoBooker:
 
             tried_times += 1
 
-            # 开放后前 10 秒更密集，之后放缓，并加入抖动
-            elapsed = (datetime.now() - open_time).total_seconds()
-            if elapsed < 10:
-                sleep_s = random.uniform(0.2, 0.5)
-            else:
-                sleep_s = random.uniform(0.8, 1.5)
-            time.sleep(sleep_s)
+            # 每 5 秒重试一次
+            time.sleep(5)
 
         return -1, "超过截止时间，预约失败"
 
