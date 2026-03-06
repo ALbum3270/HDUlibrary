@@ -114,6 +114,7 @@ class SeatAutoBooker:
         headers['Cookie'] = self.cookie
         print(data)
         self.resp = requests.post(self.cfg["target"], data=data, headers=headers)
+        print("HTTP", self.resp.status_code, self.resp.text[:300])
         self.json = json.loads(self.resp.text)
         return self.json["CODE"], self.json["MESSAGE"] + " 座位:{}".format(seat)
 
