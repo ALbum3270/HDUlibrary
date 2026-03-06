@@ -48,38 +48,51 @@ class SeatAutoBooker:
         self.cfg = booker_config
 
     def book_favorite_seat(self, user_config, seat_config):
-        #判断是否到了预约时间
-        # 阅览室晚上9点开始预约，自习室晚上8点开始预约
+        # 阅览室 21:00 开放，自习室 20:00 开放（按北京时间）
         the_day_after_tomorrow = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][(datetime.now().weekday() + 2) % 7]
         seat_type = seat_config[user_config[the_day_after_tomorrow]['name']]["type"]
+
         if seat_type == "自习室":
             open_time = datetime.now().replace(hour=20-time_zone, minute=0, second=0, microsecond=0)
             deadline  = datetime.now().replace(hour=20-time_zone, minute=15, second=0, microsecond=0)
         else:
             open_time = datetime.now().replace(hour=21-time_zone, minute=0, second=0, microsecond=0)
             deadline  = datetime.now().replace(hour=21-time_zone, minute=15, second=0, microsecond=0)
-        # 提前窗口：cron-delta-minutes 分钟前可以启动（用于判断是否太早进来）
-        earliest = open_time - timedelta(minutes=self.cfg["cron-delta-minutes"])
-        if datetime.now() < earliest or datetime.now() > deadline:
-            return -1, "未到预约时间"
-        # 如果还没到开放时间，sleep 等到开放
+
+        now = datetime.now()
+        logging.info("现在=%s | 开放=%s | 截止=%s", now, open_time, deadline)
+
+        if now > deadline:
+            return -1, "超过截止时间，预约失败"
+
+        # 无论多早启动，都等到开放时间再开始发请求
         wait_sec = (open_time - datetime.now()).total_seconds()
         if wait_sec > 0:
-            logging.info('距开放还有 %.1f 秒，等待中…', wait_sec)
+            logging.info("距开放还有 %.1f 秒，等待中…", wait_sec)
             time.sleep(wait_sec)
-        logging.info('Booking favorite seat')
+
+        logging.info("到达开放时间，开始抢座…")
+
         tried_times = 0
         while datetime.now() <= deadline:
             try:
                 code, msg = self._book_favorite_seat(user_config, seat_config, tried_times)
                 if str(code) == "0":
                     return code, msg
-                logging.info('预约未成功（code=%s msg=%s），继续重试…', code, msg)
+                logging.info("预约未成功（code=%s msg=%s），继续重试…", code, msg)
             except Exception as e:
                 logging.exception(e)
-                print(e.__class__, "尝试第{}次".format(tried_times))
+
             tried_times += 1
-            time.sleep(1)
+
+            # 开放后前 10 秒更密集，之后放缓，并加入抖动
+            elapsed = (datetime.now() - open_time).total_seconds()
+            if elapsed < 10:
+                sleep_s = random.uniform(0.2, 0.5)
+            else:
+                sleep_s = random.uniform(0.8, 1.5)
+            time.sleep(sleep_s)
+
         return -1, "超过截止时间，预约失败"
 
     def _book_favorite_seat(self, user_config, seat_config, tried_times=0):
