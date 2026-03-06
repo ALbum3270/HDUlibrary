@@ -53,10 +53,10 @@ class SeatAutoBooker:
         seat_type = seat_config[user_config[the_day_after_tomorrow]['name']]["type"]
 
         if seat_type == "自习室":
-            open_time = datetime.now().replace(hour=20-time_zone, minute=59, second=0, microsecond=0)
+            open_time = datetime.now().replace(hour=20-time_zone-1, minute=59, second=0, microsecond=0)
             deadline  = datetime.now().replace(hour=20-time_zone, minute=15, second=0, microsecond=0)
         else:
-            open_time = datetime.now().replace(hour=21-time_zone, minute=59, second=0, microsecond=0)
+            open_time = datetime.now().replace(hour=21-time_zone-1, minute=59, second=0, microsecond=0)
             deadline  = datetime.now().replace(hour=21-time_zone, minute=15, second=0, microsecond=0)
 
         now = datetime.now()
