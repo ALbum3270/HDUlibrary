@@ -53,10 +53,10 @@ class SeatAutoBooker:
         seat_type = seat_config[user_config[the_day_after_tomorrow]['name']]["type"]
 
         if seat_type == "自习室":
-            open_time = datetime.now().replace(hour=20-time_zone-1, minute=59, second=0, microsecond=0)
+            open_time = datetime.now().replace(hour=20-time_zone-1, minute=51, second=0, microsecond=0)
             deadline  = datetime.now().replace(hour=20-time_zone, minute=15, second=0, microsecond=0)
         else:
-            open_time = datetime.now().replace(hour=21-time_zone-1, minute=59, second=0, microsecond=0)
+            open_time = datetime.now().replace(hour=21-time_zone-1, minute=51, second=0, microsecond=0)
             deadline  = datetime.now().replace(hour=21-time_zone, minute=15, second=0, microsecond=0)
 
         now = datetime.now()
@@ -255,9 +255,9 @@ if __name__ == "__main__":
     # 在登录前先等到开放前5分钟，确保 cookie 是新鲜的
     seat_type = seat_config[user_config[the_day_after_tomorrow]['name']]["type"]
     if seat_type == "自习室":
-        login_time = datetime.now().replace(hour=20-time_zone-1, minute=54, second=0, microsecond=0)  # 19:54 BJ
+        login_time = datetime.now().replace(hour=20-time_zone-1, minute=46, second=0, microsecond=0)  # 19:46 BJ
     else:
-        login_time = datetime.now().replace(hour=21-time_zone-1, minute=54, second=0, microsecond=0)  # 20:54 BJ
+        login_time = datetime.now().replace(hour=21-time_zone-1, minute=46, second=0, microsecond=0)  # 20:46 BJ
     wait_sec = (login_time - datetime.now()).total_seconds()
     if wait_sec > 0:
         logging.info("距预约还有 %.1f 秒，等待后再登录…", wait_sec)
