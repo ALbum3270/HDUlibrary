@@ -77,7 +77,7 @@ class SeatAutoBooker:
         while datetime.now() <= deadline:
             try:
                 code, msg = self._book_favorite_seat(user_config, seat_config, tried_times)
-                if str(code) == "0":
+                if str(code) == "0" or "已有预约" in str(msg):
                     return code, msg
                 logging.info("预约未成功（code=%s msg=%s），继续重试…", code, msg)
             except Exception as e:
