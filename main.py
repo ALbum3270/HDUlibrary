@@ -141,7 +141,7 @@ class SeatAutoBooker:
                 page.goto(
                     'https://hdu.huitu.zhishulib.com/User/Index/hduCASLogin'
                     '?forward=%2FSpace%2FCategory%2Fredirect%3Fcategory_id%3D591',
-                    wait_until='networkidle', timeout=45000
+                    wait_until='domcontentloaded', timeout=45000
                 )
                 logging.info('当前URL: %s', page.url)
 
