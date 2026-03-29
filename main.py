@@ -156,20 +156,32 @@ class SeatAutoBooker:
                     page.screenshot(path='before_submit.png')
 
                     un_box.fill(self.un)
-                    pwd_box.fill(self.pd)
+                    # Use standard selector for password if get_by_role doesn't match
+                    if page.locator('input[type="password"]').is_visible():
+                        page.locator('input[type="password"]').fill(self.pd)
+                    else:
+                        pwd_box.fill(self.pd)
                     logging.info('表单已填写，用户: %s', self.un)
 
-                    page.click('button[type="submit"]')
+                    submit_btn = page.locator('button[type="submit"], input[type="submit"], .login-btn').first
+                    submit_btn.wait_for(state='visible', timeout=10000)
+                    submit_btn.click()
                     logging.info('已点击登录按钮')
 
+                    # 截图查看点击后的状态
+                    page.wait_for_timeout(2000)
+                    page.screenshot(path='after_click.png')
+
                     # 等待真正跳转回图书馆（host匹配，不含sso的service参数误匹配）
+                    logging.info('准备等待页面跳转/wait_for_url (当前URL: %s, Title: %s)', page.url, page.title())
                     try:
                         page.wait_for_url('*://hdu.huitu.zhishulib.com/**', timeout=30000)
+                        logging.info('wait_for_url 成功，现在 URL: %s', page.url)
                     except PWTimeout:
                         page.screenshot(path='after_login.png')
                         with open('page_source.html', 'w', encoding='utf-8') as f:
                             f.write(page.content())
-                        logging.error('登录超时，仍在页面: %s', page.url)
+                        logging.error('登录跳转超时 (Timeout waiting for hit/redirect) - Title: %s, URL: %s', page.title(), page.url)
                         return -1
 
                 page.screenshot(path='after_login.png')
@@ -184,15 +196,18 @@ class SeatAutoBooker:
                 return 0
 
             except Exception as e:
+                logging.exception('出现意外异常 (Overall exception block)')
                 try:
+                    logging.error('Error info -> Title: %s, Server URL: %s', page.title(), page.url)
                     page.screenshot(path='error.png')
                     with open('page_source.html', 'w', encoding='utf-8') as f:
                         f.write(page.content())
-                except Exception:
-                    pass
+                except Exception as ex2:
+                    logging.error("Failed to dump error info: %s", ex2)
                 logging.error('登录失败：%s', e)
                 return -1
             finally:
+                logging.info('Closing browser...')
                 browser.close()
 
     def get_user_info(self):
