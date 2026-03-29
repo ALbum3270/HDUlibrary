@@ -160,10 +160,12 @@ class SeatAutoBooker:
                     logging.info('登录表单已加载')
                     page.screenshot(path='before_submit.png')
 
-                    un_box.fill(self.un)
+                    un_box.click()
+                    un_box.press_sequentially(self.un, delay=50) # 模拟真实键盘敲击
                     page.wait_for_timeout(500)
                     
-                    pwd_box.fill(self.pd)
+                    pwd_box.click()
+                    pwd_box.press_sequentially(self.pd, delay=50)
                     page.wait_for_timeout(1000)  # Wait for JS frameworks to catch up and handle DOM shifts
                     logging.info('表单已填写，用户: %s', self.un)
 
