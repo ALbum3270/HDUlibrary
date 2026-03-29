@@ -189,7 +189,13 @@ class SeatAutoBooker:
                     # 等待真正跳转回图书馆（host匹配，不含sso的service参数误匹配）
                     logging.info('准备等待页面跳转/wait_for_url (当前URL: %s, Title: %s)', page.url, page.title())
                     try:
-                        page.wait_for_url('*://hdu.huitu.zhishulib.com/**', timeout=30000)
+                        # 使用循环判断而不是 wait_for_url，避免因为某个缓慢的资源导致的 load 事件迟迟不触发而超时
+                        for _ in range(30):
+                            if 'hdu.huitu.zhishulib.com' in page.url and 'sso.hdu.edu.cn' not in page.url:
+                                break
+                            page.wait_for_timeout(1000)
+                        else:
+                            raise PWTimeout("Timeout waiting for redirect matching conditions")
                         logging.info('wait_for_url 成功，现在 URL: %s', page.url)
                     except PWTimeout:
                         page.screenshot(path='after_login.png')
