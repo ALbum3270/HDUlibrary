@@ -165,14 +165,15 @@ class SeatAutoBooker:
                     logging.info('登录表单已加载')
                     page.screenshot(path='before_submit.png')
 
-                    un_box.click()
-                    un_box.press_sequentially(self.un, delay=50) # 模拟真实键盘敲击
+                    un_box.fill(self.un)
+                    # 触发一下 Angular 的 input 事件机制，防止表单觉得是空的
+                    un_box.evaluate("node => node.dispatchEvent(new Event('input', { bubbles: true }))")
                     page.wait_for_timeout(500)
-                    
-                    pwd_box.click()
-                    pwd_box.press_sequentially(self.pd, delay=50)
+
+                    pwd_box.fill(self.pd)
+                    pwd_box.evaluate("node => node.dispatchEvent(new Event('input', { bubbles: true }))")
                     page.wait_for_timeout(1000)  # Wait for JS frameworks to catch up and handle DOM shifts
-                    logging.info('表单已填写，用户: %s', self.un)
+                    logging.info('表单已填写，用户: %s，密码长度: %d', self.un, len(self.pd))
 
                     try:
                         pwd_box.press('Enter')
