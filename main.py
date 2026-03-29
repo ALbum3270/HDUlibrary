@@ -161,17 +161,26 @@ class SeatAutoBooker:
                     page.screenshot(path='before_submit.png')
 
                     un_box.fill(self.un)
+                    page.wait_for_timeout(500)
+                    
                     # Use standard selector for password if get_by_role doesn't match
-                    if page.locator('input[type="password"]').is_visible():
-                        page.locator('input[type="password"]').fill(self.pd)
-                    else:
-                        pwd_box.fill(self.pd)
+                    pwd_target = page.locator('input[type="password"]') if page.locator('input[type="password"]').is_visible() else pwd_box
+                    pwd_target.focus()
+                    pwd_target.fill(self.pd)
+                    page.wait_for_timeout(1000)  # Wait for JS frameworks to catch up and handle DOM shifts
                     logging.info('表单已填写，用户: %s', self.un)
 
-                    submit_btn = page.locator('button[type="submit"], input[type="submit"], .login-btn').first
-                    submit_btn.wait_for(state='visible', timeout=10000)
-                    submit_btn.click()
-                    logging.info('已点击登录按钮')
+                    try:
+                        pwd_target.press('Enter')
+                        page.wait_for_timeout(1000)
+                        
+                        submit_btn = page.locator('button[type="submit"], input[type="submit"], .login-btn').first
+                        if submit_btn.is_visible():
+                            # Use JS click to avoid coordinate misses if DOM shifts dynamically (e.g. notices loading)
+                            submit_btn.evaluate("node => node.click()")
+                        logging.info('已触发登录 (回车+模拟点击)')
+                    except Exception as e:
+                        logging.warning('触发登录时出现异常 (可能已跳转): %s', e)
 
                     # 截图查看点击后的状态
                     page.wait_for_timeout(2000)
