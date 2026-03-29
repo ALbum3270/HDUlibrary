@@ -153,9 +153,9 @@ class SeatAutoBooker:
                 if 'sso.hdu.edu.cn' in page.url:
                     logging.info('检测到SSO登录页面')
 
-                    # 用role定位可见的文本框（无需中文字符，避免编码问题）
-                    un_box = page.get_by_role('textbox').first
-                    pwd_box = page.get_by_role('textbox').nth(1)
+                    # 用更可靠的 CSS 选择器定位输入框
+                    un_box = page.locator('input[type="text"]').first
+                    pwd_box = page.locator('input[type="password"]').first
                     un_box.wait_for(state='visible', timeout=30000)
                     logging.info('登录表单已加载')
                     page.screenshot(path='before_submit.png')
@@ -163,21 +163,18 @@ class SeatAutoBooker:
                     un_box.fill(self.un)
                     page.wait_for_timeout(500)
                     
-                    # Use standard selector for password if get_by_role doesn't match
-                    pwd_target = page.locator('input[type="password"]') if page.locator('input[type="password"]').is_visible() else pwd_box
-                    pwd_target.focus()
-                    pwd_target.fill(self.pd)
+                    pwd_box.fill(self.pd)
                     page.wait_for_timeout(1000)  # Wait for JS frameworks to catch up and handle DOM shifts
                     logging.info('表单已填写，用户: %s', self.un)
 
                     try:
-                        pwd_target.press('Enter')
+                        pwd_box.press('Enter')
                         page.wait_for_timeout(1000)
                         
-                        submit_btn = page.locator('button[type="submit"], input[type="submit"], .login-btn').first
+                        # 尝试多种可能的登录按钮选择器，使用 force=True 强制点击
+                        submit_btn = page.locator('button[type="submit"], button:has-text("登录"), input[type="submit"], input[type="button"][value*="登录"], .dtk-btn, .login-btn, #login-submit').first
                         if submit_btn.is_visible():
-                            # Use JS click to avoid coordinate misses if DOM shifts dynamically (e.g. notices loading)
-                            submit_btn.evaluate("node => node.click()")
+                            submit_btn.click(force=True)
                         logging.info('已触发登录 (回车+模拟点击)')
                     except Exception as e:
                         logging.warning('触发登录时出现异常 (可能已跳转): %s', e)
