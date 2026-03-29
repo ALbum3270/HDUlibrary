@@ -154,8 +154,8 @@ class SeatAutoBooker:
                     logging.info('检测到SSO登录页面')
 
                     # 用更可靠的 CSS 选择器定位输入框
-                    un_box = page.locator('input[type="text"]').first
-                    pwd_box = page.locator('input[type="password"]').first
+                    un_box = page.locator('input[name="username"], input[autocomplete="username"], input[placeholder*="学工号"]').first
+                    pwd_box = page.locator('input[type="password"], input[placeholder*="密码"]').first
                     un_box.wait_for(state='visible', timeout=30000)
                     logging.info('登录表单已加载')
                     page.screenshot(path='before_submit.png')
