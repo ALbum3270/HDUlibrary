@@ -140,6 +140,11 @@ class SeatAutoBooker:
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             )
             page = context.new_page()
+            
+            # 增加页面日志监控，排查白屏或资源加载失败原因
+            page.on("console", lambda msg: logging.debug(f"PAGE CONSOLE: {msg.type} - {msg.text}"))
+            page.on("pageerror", lambda exc: logging.error(f"PAGE ERROR: {exc}"))
+            page.on("requestfailed", lambda req: logging.error(f"REQUEST FAILED: {req.url} - {req.failure}"))
 
             try:
                 # 访问需登录的URL，触发SSO重定向
