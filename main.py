@@ -1,318 +1,410 @@
-import requests
-import yaml
-import random
-from datetime import datetime, timedelta
-import json
+"""
+HDU Library SeatHunter - Main Entry Point
+
+Usage:
+    python main.py                  # GUI mode (default)
+    python main.py --cli            # CLI mode (terminal interface)
+    python main.py --daemon         # Daemon mode (no menu, reads config and runs)
+    python main.py --once           # One booking window, then exit (for CI)
+    python main.py -c path/to/config.yaml  # Custom config path
+"""
+
 import os
+import sys
+import signal
 import logging
 import time
+import warnings
+
+from argparse import ArgumentParser
+
+# Python version check
+_MIN_PYTHON = (3, 8)
+if sys.version_info < _MIN_PYTHON:
+    sys.exit(
+        f"SeatHunter requires Python >= {_MIN_PYTHON[0]}.{_MIN_PYTHON[1]}, "
+        f"current: {sys.version_info.major}.{sys.version_info.minor}"
+    )
+
+# Suppress typing module DeprecationWarning on Python 3.12+
+if sys.version_info >= (3, 12):
+    warnings.filterwarnings("ignore", category=DeprecationWarning, module="typing")
 
 
-logging.basicConfig(
-                    format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-                    datefmt='%H:%M:%S',
-                    level=logging.DEBUG)
-
-time_zone = 8  # 时区
-
-# 两天后日期
-
-def get_seats_with_config(user_config, date_config, seat_config):
-    # 二楼东/二楼西/四楼/三楼大厅/守正书院/求新书院/自定义
-    seat_name = date_config['name']
-    if seat_name == "自定义":
-        return user_config['自定义']
-    return list(range(seat_config[seat_name]['begin'], seat_config[seat_name]['end']))
+def get_app_dir():
+    """Get application root directory (PyInstaller-compatible)."""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
 
 
-class SeatAutoBooker:
-    def __init__(self, booker_config):
-        self.json = None
-        self.resp = None
-        self.user_data = None
+def setup_path():
+    """Add project root to Python path for imports."""
+    app_dir = get_app_dir()
+    if app_dir not in sys.path:
+        sys.path.insert(0, app_dir)
 
-        logging.info('Creating SeatAutoBooker object')
 
-        self.un = os.environ["SCHOOL_ID"].strip()  # 学号
-        print("使用用户：{}".format(self.un))
-        self.pd = os.environ["PASSWORD"].strip()  # 密码
-        self.SCKey = None
-        try:
-            self.SCKey = os.environ["SCKEY"]
-        except KeyError:
-            print("没有Server酱的key,将不会推送消息")
+def parse_args():
+    """Parse command-line arguments."""
+    parser = ArgumentParser(description="HDU Library SeatHunter")
+    parser.add_argument(
+        "-c", "--config",
+        type=str,
+        default=os.path.join(get_app_dir(), "config", "config.yaml"),
+        help="Config file path (default: config/config.yaml)",
+    )
+    parser.add_argument(
+        "--daemon",
+        action="store_true",
+        help="Run in daemon mode (no interactive menu, reads config and starts scheduler)",
+    )
+    parser.add_argument(
+        "--cli",
+        action="store_true",
+        help="Use CLI mode instead of GUI",
+    )
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Book the plans for two days from today, then exit (GitHub Actions mode)",
+    )
+    return parser.parse_args()
 
-        self.driver = None  # 不再使用 Selenium，保留属性供兼容
-        self.cookie = None
 
-        self.cfg = booker_config
+def run_interactive(config_path: str):
+    """Run in interactive mode with GUI (default) or CLI."""
+    try:
+        import tkinter as tk
+    except ImportError:
+        run_cli(config_path)
+        return
 
-    def book_favorite_seat(self, user_config, seat_config):
-        # 阅览室 21:00 开放，自习室 20:00 开放（按北京时间）
-        the_day_after_tomorrow = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][(datetime.now().weekday() + 2) % 7]
-        seat_type = seat_config[user_config[the_day_after_tomorrow]['name']]["type"]
+    from seathunter.logging_.logger import setup_logging
+    from seathunter.config.manager import ConfigManager
+    from seathunter.auth.session_manager import SessionManager
+    from seathunter.api.client import ApiClient
+    from seathunter.api.room_cache import RoomCache
+    from seathunter.ui.gui import GuiApp
 
-        if seat_type == "自习室":
-            open_time = datetime.now().replace(hour=20-time_zone-1, minute=51, second=0, microsecond=0)
-            deadline  = datetime.now().replace(hour=20-time_zone, minute=15, second=0, microsecond=0)
+    logger = setup_logging()
+    logger.info("SeatHunter starting (GUI mode)")
+
+    # Initialize components
+    config = ConfigManager(config_path)
+    config.load()
+
+    session_mgr = SessionManager(config)
+    session_mgr.init_session()
+
+    api_client = ApiClient(session_mgr)
+    room_cache = RoomCache(api_client)
+
+    # Create and run GUI
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        print("无法初始化图形界面，切换到命令行模式")
+        run_cli(config_path)
+        return
+
+    # Hide console after GUI window is ready
+    from seathunter.platform_.window import hide_console
+    hide_console()
+
+    app = GuiApp(root, config, session_mgr, api_client, room_cache)
+    root.mainloop()
+
+
+def run_cli(config_path: str):
+    """Run in CLI mode with full terminal menu."""
+    from seathunter.logging_.logger import setup_logging
+    from seathunter.config.manager import ConfigManager
+    from seathunter.auth.session_manager import SessionManager
+    from seathunter.api.client import ApiClient
+    from seathunter.api.room_cache import RoomCache
+    from seathunter.ui.cli import CliUI
+    from seathunter.platform_.window import maximize_window
+
+    # Setup
+    maximize_window()
+    logger = setup_logging()
+    logger.info("SeatHunter starting (CLI mode)")
+
+    # Initialize components
+    config = ConfigManager(config_path)
+    config.load()
+
+    session_mgr = SessionManager(config)
+    session_mgr.init_session()
+
+    api_client = ApiClient(session_mgr)
+    room_cache = RoomCache(api_client)
+
+    # Create and run UI
+    ui = CliUI(config, session_mgr, api_client, room_cache)
+    ui.login()
+    ui.run()
+
+
+def run_daemon(config_path: str):
+    """Run in daemon mode: read config, start scheduler, no menu."""
+    from seathunter.logging_.logger import setup_logging
+    from seathunter.config.manager import ConfigManager
+    from seathunter.auth.session_manager import SessionManager
+    from seathunter.api.client import ApiClient
+    from seathunter.api.room_cache import RoomCache
+    from seathunter.scheduler.engine import SchedulerEngine
+    from seathunter.scheduler.booking_runner import BookingRunner
+    from seathunter.logging_.history import HistoryLogger
+
+    logger = setup_logging()
+    logger.info("SeatHunter starting (daemon mode)")
+
+    # Initialize components
+    config = ConfigManager(config_path)
+    config.load()
+
+    schedules = config.get_schedules()
+    active_schedules = [s for s in schedules if s.enabled]
+    plans = config.get_plans()
+
+    if not active_schedules:
+        logger.error("No active schedules found in config. Exiting.")
+        sys.exit(1)
+    if not plans:
+        logger.error("No plans found in config. Exiting.")
+        sys.exit(1)
+
+    logger.info("Found %d active schedule(s) and %d plan(s)",
+               len(active_schedules), len(plans))
+
+    # Login
+    session_mgr = SessionManager(config)
+    session_mgr.init_session()
+
+    success, err = session_mgr.login()
+    if not success:
+        logger.error("Login failed: %s", err)
+        sys.exit(1)
+    logger.info("Login successful: uid=%s", session_mgr.uid)
+
+    # Setup API and room cache
+    api_client = ApiClient(session_mgr)
+    room_cache = RoomCache(api_client)
+
+    # Background room data refresh
+    room_cache.start_background_refresh()
+
+    # Settings
+    settings = config.get_settings()
+    runner = BookingRunner(
+        api_client=api_client,
+        session_manager=session_mgr,
+        interval=settings["interval"],
+        max_try_times=settings["max_try_times"],
+    )
+
+    engine = SchedulerEngine(
+        config_manager=config,
+        session_manager=session_mgr,
+        booking_runner=runner,
+    )
+
+    history = HistoryLogger()
+
+    # Engine callbacks (log-only in daemon mode)
+    def on_countdown(remaining, trigger_time, plan_desc):
+        from seathunter.ui.display import format_countdown
+        logger.info(
+            "Countdown: %s -> %s | Remaining: %s",
+            trigger_time.strftime("%Y-%m-%d %H:%M"),
+            plan_desc,
+            format_countdown(remaining),
+        )
+
+    def on_result(result):
+        history.log(result)
+        if result.success:
+            logger.info("Booking result: %s", result)
         else:
-            open_time = datetime.now().replace(hour=21-time_zone-1, minute=51, second=0, microsecond=0)
-            deadline  = datetime.now().replace(hour=21-time_zone, minute=15, second=0, microsecond=0)
+            logger.warning("Booking result: %s", result)
 
-        now = datetime.now()
-        logging.info("现在=%s | 开放=%s | 截止=%s", now, open_time, deadline)
+    def on_start(target_date, plan_ids):
+        logger.info("Booking starting for %s, plans: %s",
+                    target_date.strftime("%Y-%m-%d"), ", ".join(plan_ids))
 
-        if now > deadline:
-            return -1, "超过截止时间，预约失败"
+    def on_error(error):
+        logger.error("Engine error: %s", error)
 
-        # 无论多早启动，都等到开放时间再开始发请求
-        wait_sec = (open_time - datetime.now()).total_seconds()
-        if wait_sec > 0:
-            logging.info("距开放还有 %.1f 秒，等待中…", wait_sec)
-            time.sleep(wait_sec)
+    engine.on_countdown_tick = on_countdown
+    engine.on_booking_result = on_result
+    engine.on_booking_start = on_start
+    engine.on_error = on_error
 
-        logging.info("到达开放时间，开始抢座…")
+    # Handle SIGTERM/SIGINT for clean shutdown
+    def signal_handler(signum, frame):
+        logger.info("Received signal %s, shutting down...", signum)
+        engine.stop()
+        room_cache.stop_background_refresh()
+        sys.exit(0)
 
-        tried_times = 0
-        while datetime.now() <= deadline:
-            try:
-                code, msg = self._book_favorite_seat(user_config, seat_config, tried_times)
-                if str(code) == "0" or "已有预约" in str(msg):
-                    return code, msg
-                logging.info("预约未成功（code=%s msg=%s），继续重试…", code, msg)
-            except Exception as e:
-                logging.exception(e)
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
 
-            tried_times += 1
+    # Start engine
+    engine.start()
+    logger.info("Scheduler engine started in daemon mode")
 
-            # 每 5 秒重试一次
-            time.sleep(5)
+    # Block main thread while engine runs
+    try:
+        while engine.is_running:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logger.info("Keyboard interrupt, shutting down...")
+        engine.stop()
+        room_cache.stop_background_refresh()
 
-        return -1, "超过截止时间，预约失败"
 
-    def _book_favorite_seat(self, user_config, seat_config, tried_times=0):
-        logging.info('Entering _book_favorite_seat method')
-        the_day_after_tomorrow = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][(datetime.now().weekday() + 2) % 7]
-        date_config = user_config[the_day_after_tomorrow]
-        seats = get_seats_with_config(user_config, date_config, seat_config)
-        today_0_clock = datetime.strptime(datetime.now().strftime("%Y-%m-%d 00:00:00"), "%Y-%m-%d %H:%M:%S")
-        book_time = today_0_clock + timedelta(days=2) + timedelta(hours=date_config['开始时间'])
-        delta = book_time - self.cfg["start-time"]
-        total_seconds = delta.days * 24 * 3600 + delta.seconds
-        if date_config['name'] == '自定义' and tried_times<self.cfg["max-retry"]/3*2:
-            seat = seats[0]
-        else:
-            seat = random.choice(seats)
-        data = f"beginTime={total_seconds}&duration={3600 * date_config['持续小时数']}&&seats[0]={seat}&seatBookers[0]={self.user_data['uid']}"
+def run_once(config_path: str) -> int:
+    """Run one booking window and exit with a CI-friendly status code."""
+    from datetime import datetime
 
-        headers = self.cfg["headers"]
-        headers['Cookie'] = self.cookie
-        # 打印 beginTime 对应的真实时刻，便于验证时间语义
-        bt = datetime(1970, 1, 1, 8, 0, 0) + timedelta(seconds=total_seconds)
-        print("REQUEST_DATA", data)
-        print("BEGIN_TIME_SECONDS", total_seconds, "->", bt, "(naive CST)")
-        self.resp = requests.post(self.cfg["target"], data=data, headers=headers)
-        print("HTTP", self.resp.status_code, "len=", len(self.resp.text))
-        print("RESP_HEAD", self.resp.text[:300])
-        try:
-            self.json = self.resp.json()
-        except Exception:
-            print("RESP_NOT_JSON", self.resp.text[:500])
-            raise
-        print("BOOK_RESULT", "CODE=", self.json.get("CODE"), "MSG=", self.json.get("MESSAGE"))
-        return self.json["CODE"], self.json["MESSAGE"] + " 座位:{}".format(seat)
+    from seathunter.logging_.logger import setup_logging
+    from seathunter.logging_.history import HistoryLogger
+    from seathunter.config.manager import ConfigManager
+    from seathunter.auth.session_manager import SessionManager
+    from seathunter.api.client import ApiClient
+    from seathunter.scheduler.booking_runner import BookingRunner
+    from seathunter.scheduler.one_shot import (
+        append_github_summary,
+        booking_open_at,
+        collect_plan_ids,
+        target_date_for_run,
+        wait_until,
+    )
 
-    def login(self):
-        from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
-        logging.info('使用 Playwright 进行登录')
+    logger = setup_logging()
+    logger.info("SeatHunter starting (one-shot mode)")
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    '--no-sandbox', 
-                    '--disable-dev-shm-usage',
-                    '--disable-blink-features=AutomationControlled'
-                ]
-            )
-            context = browser.new_context(
-                viewport={'width': 1920, 'height': 1080},
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            )
-            page = context.new_page()
-            
-            # 增加页面日志监控，排查白屏或资源加载失败原因
-            page.on("console", lambda msg: logging.debug(f"PAGE CONSOLE: {msg.type} - {msg.text}"))
-            page.on("pageerror", lambda exc: logging.error(f"PAGE ERROR: {exc}"))
-            page.on("requestfailed", lambda req: logging.error(f"REQUEST FAILED: {req.url} - {req.failure}"))
+    config = ConfigManager(config_path)
+    config.load()
 
-            try:
-                # 访问需登录的URL，触发SSO重定向
-                page.goto(
-                    'https://hdu.huitu.zhishulib.com/User/Index/hduCASLogin'
-                    '?forward=%2FSpace%2FCategory%2Fredirect%3Fcategory_id%3D591',
-                    wait_until='domcontentloaded', timeout=45000
-                )
-                logging.info('当前URL: %s', page.url)
+    now = datetime.now()
+    target_date = target_date_for_run(now)
+    schedules = config.get_schedules()
+    plan_ids = collect_plan_ids(schedules, target_date)
 
-                if 'sso.hdu.edu.cn' in page.url:
-                    logging.info('检测到SSO登录页面')
-
-                    # 用更可靠的 CSS 选择器定位输入框
-                    un_box = page.locator('input[name="username"], input[autocomplete="username"], input[placeholder*="学工号"]').first
-                    pwd_box = page.locator('input[type="password"], input[placeholder*="密码"]').first
-                    un_box.wait_for(state='visible', timeout=30000)
-                    logging.info('登录表单已加载')
-                    page.screenshot(path='before_submit.png')
-
-                    un_box.fill(self.un)
-                    # 触发一下 Angular 的 input 事件机制，防止表单觉得是空的
-                    un_box.evaluate("node => node.dispatchEvent(new Event('input', { bubbles: true }))")
-                    page.wait_for_timeout(500)
-
-                    pwd_box.fill(self.pd)
-                    pwd_box.evaluate("node => node.dispatchEvent(new Event('input', { bubbles: true }))")
-                    page.wait_for_timeout(1000)  # Wait for JS frameworks to catch up and handle DOM shifts
-                    logging.info('表单已填写，用户: %s，密码长度: %d', self.un, len(self.pd))
-
-                    try:
-                        pwd_box.press('Enter')
-                        page.wait_for_timeout(1000)
-                        
-                        # 尝试多种可能的登录按钮选择器，使用 force=True 强制点击
-                        submit_btn = page.locator('button[type="submit"], button:has-text("登录"), input[type="submit"], input[type="button"][value*="登录"], .dtk-btn, .login-btn, #login-submit').first
-                        if submit_btn.is_visible():
-                            submit_btn.click(force=True)
-                        logging.info('已触发登录 (回车+模拟点击)')
-                    except Exception as e:
-                        logging.warning('触发登录时出现异常 (可能已跳转): %s', e)
-
-                    # 截图查看点击后的状态
-                    page.wait_for_timeout(2000)
-                    page.screenshot(path='after_click.png')
-
-                    # 等待真正跳转回图书馆（host匹配，不含sso的service参数误匹配）
-                    logging.info('准备等待页面跳转/wait_for_url (当前URL: %s, Title: %s)', page.url, page.title())
-                    try:
-                        # 使用循环判断而不是 wait_for_url，避免因为某个缓慢的资源导致的 load 事件迟迟不触发而超时
-                        for _ in range(30):
-                            if 'hdu.huitu.zhishulib.com' in page.url and 'sso.hdu.edu.cn' not in page.url:
-                                break
-                            page.wait_for_timeout(1000)
-                        else:
-                            raise PWTimeout("Timeout waiting for redirect matching conditions")
-                        logging.info('wait_for_url 成功，现在 URL: %s', page.url)
-                    except PWTimeout:
-                        page.screenshot(path='after_login.png')
-                        with open('page_source.html', 'w', encoding='utf-8') as f:
-                            f.write(page.content())
-                        logging.error('登录跳转超时 (Timeout waiting for hit/redirect) - Title: %s, URL: %s', page.title(), page.url)
-                        return -1
-
-                page.screenshot(path='after_login.png')
-                logging.info('登录后URL: %s', page.url)
-
-                # 提取Cookie
-                cookies = context.cookies()
-                self.cookie = ';'.join(f"{c['name']}={c['value']}" for c in cookies)
-                self.cfg['headers']['Cookie'] = self.cookie
-                logging.info('Cookie获取成功，键: %s', [c['name'] for c in cookies])
-                logging.info('登录成功！')
-                return 0
-
-            except Exception as e:
-                logging.exception('出现意外异常 (Overall exception block)')
-                try:
-                    logging.error('Error info -> Title: %s, Server URL: %s', page.title(), page.url)
-                    page.screenshot(path='error.png')
-                    with open('page_source.html', 'w', encoding='utf-8') as f:
-                        f.write(page.content())
-                except Exception as ex2:
-                    logging.error("Failed to dump error info: %s", ex2)
-                logging.error('登录失败：%s', e)
-                return -1
-            finally:
-                logging.info('Closing browser...')
-                browser.close()
-
-    def get_user_info(self):
-        logging.info('Getting user info')
-
-        headers = self.cfg["headers"]
-        headers['Cookie'] = self.cookie
-        try:
-            resp = requests.get("https://hdu.huitu.zhishulib.com/Seat/Index/searchSeats?LAB_JSON=1",
-                                headers=headers)
-            self.user_data = resp.json()['DATA']
-            _ = self.user_data['uid']
-        except Exception as e:
-            logging.exception(e)
-            print(self.user_data)
-            print(e.__class__.__name__ + ",获取用户数据失败")
-            return -1
-        print("获取用户数据成功")
+    if not plan_ids:
+        message = f"No enabled plans for {target_date:%Y-%m-%d}; nothing to do."
+        logger.info(message)
+        append_github_summary(["## SeatHunter", "", message])
         return 0
 
-    def wechatNotice(self, message, desp=None):
-        logging.info('Sending WeChat notice')
+    plans_map = {plan.id: plan for plan in config.get_plans()}
+    missing_plan_ids = [plan_id for plan_id in plan_ids if plan_id not in plans_map]
+    if missing_plan_ids:
+        logger.error("Schedules reference missing plans: %s", ", ".join(missing_plan_ids))
+        return 1
+    plans = [plans_map[plan_id] for plan_id in plan_ids]
 
-        if self.SCKey != '':
-            url = 'https://sctapi.ftqq.com/{0}.send'.format(self.SCKey)
-            data = {
-                'title': message,
-                'desp': desp,
-            }
-            try:
-                r = requests.post(url, data=data)
-                if r.json()["data"]["error"] == 'SUCCESS':
-                    print("Server酱通知成功")
-                else:
-                    print("Server酱通知失败")
-            except Exception as e:
-                logging.exception(e)
-                print(e.__class__, "推送服务配置错误")
+    invalid_messages = []
+    for plan in plans:
+        invalid_messages.extend(plan.validate())
+    if invalid_messages:
+        for message in invalid_messages:
+            logger.error(message)
+        return 1
 
-def is_booking_enable(date_cfg):
-    if date_cfg['启用']:
-        return True
-    return False
+    user = config.get_user_info()
+    if not user.get("login_name") or not user.get("password"):
+        logger.error(
+            "Credentials are missing. Set SEATHUNTER_LOGIN_NAME and "
+            "SEATHUNTER_PASSWORD (GitHub secrets SCHOOL_ID and PASSWORD)."
+        )
+        return 1
+
+    session_mgr = SessionManager(config)
+    session_mgr.init_session()
+    success, error_type = session_mgr.login()
+    if not success:
+        logger.error("Login failed: %s", error_type)
+        append_github_summary(["## SeatHunter", "", f"Login failed: {error_type}"])
+        return 1
+    logger.info("Login successful: uid=%s", session_mgr.uid)
+
+    settings = config.get_settings()
+    try:
+        open_at = booking_open_at(datetime.now(), settings["booking_open_time"])
+    except ValueError as exc:
+        logger.error("%s", exc)
+        return 1
+
+    if datetime.now() < open_at:
+        logger.info(
+            "Target date: %s; booking opens at %s",
+            target_date.strftime("%Y-%m-%d"),
+            open_at.strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        wait_until(open_at)
+    else:
+        logger.warning("Booking window has already opened; starting immediately")
+
+    runner = BookingRunner(
+        api_client=ApiClient(session_mgr),
+        session_manager=session_mgr,
+        interval=int(settings["interval"]),
+        max_try_times=int(settings["max_try_times"]),
+    )
+    history = HistoryLogger()
+
+    def on_result(result):
+        history.log(result)
+        if result.success:
+            logger.info("Booking result: %s", result)
+        else:
+            logger.warning("Booking result: %s", result)
+
+    results = runner.run_booking(
+        plans=plans,
+        target_date=target_date,
+        on_result=on_result,
+    )
+    successful = next((result for result in results if result.success), None)
+    if successful:
+        append_github_summary([
+            "## SeatHunter booking succeeded",
+            "",
+            f"- Target date: {target_date:%Y-%m-%d}",
+            f"- Plan: {successful.plan_id}",
+            f"- Seat: {successful.room_name}-{successful.seat_num}",
+        ])
+        return 0
+
+    last_message = results[-1].message if results else "No booking request was made"
+    append_github_summary([
+        "## SeatHunter booking failed",
+        "",
+        f"- Target date: {target_date:%Y-%m-%d}",
+        f"- Result: {last_message}",
+    ])
+    return 1
+
+
+def main():
+    """Main entry point."""
+    setup_path()
+    args = parse_args()
+
+    if args.once:
+        sys.exit(run_once(args.config))
+    elif args.daemon:
+        run_daemon(args.config)
+    elif args.cli:
+        run_cli(args.config)
+    else:
+        run_interactive(args.config)
+
 
 if __name__ == "__main__":
-    logging.info('Start of the program')
-    with open("user_config.yml", 'r') as f_obj:
-        user_config = yaml.safe_load(f_obj)
-    with open("config/basic_config.yml", 'r') as f_obj:
-        basic_config = yaml.safe_load(f_obj)
-    with open("config/seat_config.yml", 'r') as f_obj:
-        seat_config = yaml.safe_load(f_obj)
-
-    the_day_after_tomorrow = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][(datetime.now().weekday() + 2) % 7]
-    if not is_booking_enable(user_config[the_day_after_tomorrow]):
-        logging.info('预约未启用')
-        print("预约未启用")
-        exit(0)
-
-    # 在登录前先等到开放前5分钟，确保 cookie 是新鲜的
-    seat_type = seat_config[user_config[the_day_after_tomorrow]['name']]["type"]
-    if seat_type == "自习室":
-        login_time = datetime.now().replace(hour=20-time_zone-1, minute=46, second=0, microsecond=0)  # 19:46 BJ
-    else:
-        login_time = datetime.now().replace(hour=21-time_zone-1, minute=46, second=0, microsecond=0)  # 20:46 BJ
-    wait_sec = (login_time - datetime.now()).total_seconds()
-    if wait_sec > 0:
-        logging.info("距预约还有 %.1f 秒，等待后再登录…", wait_sec)
-        time.sleep(wait_sec)
-
-    s = SeatAutoBooker(basic_config["SeatAutoBooker"])
-    if not s.login() == 0:
-        logging.info('Login unsuccessful')
-        exit(-1)
-    if not s.get_user_info() == 0:
-        logging.info('Getting user info unsuccessful')
-        exit(-1)
-    result = s.book_favorite_seat(user_config=user_config, seat_config=seat_config)
-    if result and result[0] is not None:
-        s.wechatNotice("图书馆预约结果", desp="CODE: {} | {}".format(result[0], result[1]))
-    if s.driver:
-        s.driver.quit()
-    logging.info('End of the program')
+    main()

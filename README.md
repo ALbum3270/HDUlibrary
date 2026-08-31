@@ -1,74 +1,69 @@
-![logo](./docs/logo.png)
-# HDU Auto Book 杭州电子科技大学图书馆自动预约脚本
+# 杭州电子科技大学图书馆抢座脚本
 
-*<center><font size=2 font-style="italic"> “当知识织就的茧房温柔剥落，你在图书馆沉淀的岁月自会羽化成风，托起你向青空而去的锋利轨迹。” </font> </center>*
+## 脚本介绍
 
-> [!IMPORTANT]
-> 请遵守以下使用协议,若不同意此协议，请移步其它项目
-> <details> <summary> 使用协议 </summary>
->
->  - 请合理使用此脚本，切勿占用公共资源，做出诸如预约但不去签到使用的行为。
->  - 本项目仅供学术交流使用，作者不对任何因使用本脚本造成的后果负责,包括但不仅限于由滥用脚本导致的封号，账号被锁定等。
->  - 本项目将停止维护并将被移除，当发生以下情况之一:
->    - 本项目被杭电图书馆或校方要求删除
->    - 作者发现本项目影响到了杭电图书馆正常的预约服务
->    - 作者发现本项目被滥用或有其他不妥之处
-> - 当本项目被移除后，请各位使用者自觉停止使用fork的代码，以免造成不必要的麻烦。
-> </details>
+本脚本用于杭电图书馆自习室座位预约，目前支持自动登录、批量预约、定时预约等功能，有以下模块：
 
+* 查看/添加/删除待选座位方案
+* 批量修改方案中预约时间
+* 定时抢座
+* 图形化界面
 
-> [!NOTE]
-> 本脚本于`2025.4.4`进行了最后一次更新（新增自习室楼层），但本项目应该可以在很长一段时间内可以正常工作，大家可以自行配置下试试是否可用，若有人愿意接手本项目，可以邮件联系我。
+**本脚本仅限用于个人图书馆预约座位，请勿恶意囤座位！**
 
-- [配置](#配置)
-- [设置预约时间](#设置预约时间设置预约时间)
-- [启用脚本](#启用脚本)
+**截至2026-08-16本脚本还可正常使用**
 
-## 视频教学
+## 运行说明
 
-[https://github.com/HaleyCH/HDU_AUTO_BOOK-public/blob/V2/docs/tutorial.mp4](https://github.com/user-attachments/assets/03444438-6150-4b71-8f39-7d5f4eda3992)
+0. 本脚本基于Python 3.14编写，请先安装Python 3.14。
+1. 克隆本项目
 
-## 配置
- 1. fork本仓库
- 2. 点击仓库中的 `setting` 标签， 选中 `Secrets` 选项卡
- 3. 点击 `New repository secret` 按钮，新建环境变量。
+``` shell
+git clone https://github.com/stormmmg/HDU-Library-SeatHunter.git
+cd HDU-Library-SeatHunter
+```
 
-   | 环境变量名| 说明        | 用途                                              |
-   |:----------|:------------------------------------------------|:--------------|
-   | `SCHOOL_ID` | 你的学号      | 用于登录[杭电智慧图书馆](https://hdu.huitu.zhishulib.com/) |
-   | `PASSWORD` | 杭电智慧图书馆密码 | 用于登录[杭电智慧图书馆](https://hdu.huitu.zhishulib.com/) |
-   | `SCKEY`（选填） | 微信推送服务    | 详见 [Sever酱](https://sct.ftqq.com/) 配置微信推送打卡结果   |
+2. 安装依赖项
 
-![示范](docs/img1.png)
+```shell
+pip install -r requirements.txt
+```
 
-## 设置预约时间
- 1. 点开 `user_config.yml` 文件
- 2. 修改其中日期所对应的设置。
+3. 运行脚本
 
- | 名称      | 值                                | 功能        | 示范                       |
-|---------|----------------------------------|-----------|--------------------------|
-| `启用`    | `true`/`false`                   | 是否在该天预定座位 | 启用: true                 |
-| `name`  | `二楼东`/`二楼西`/`四楼`/`三楼大厅`/`自定义`            | 预定座位位置    | name:二楼自习室               |
-| `开始时间`  | 24小时对应数字                         | 使用座位开始时间  | 开始时间: 14 (代表预约下午两点开始的座位) |
-| `持续小时数` | 数字                               | 使用座位小时数   | 持续小时数: 2                 |
-| `自定义`   | yaml格式列表，内容为你喜欢的座位号（需设置type:自定义） | 使用自定义座位号  | 自定义：<br>  -10001         |
+``` shell
+python main.py
+```
 
- 3. 保存文件并点击 `Commit changes` 按钮
+4. 构建 exe
 
-![示范](docs/img2.png)
+```
+python build.py
+```
 
-## 启用脚本
- 1. 点击仓库中的 `Actions` 标签
- 2. 点击 `I understand my workflows, go ahead and enable them` 按钮
+## GitHub Actions 自动预约
 
-![示范](docs/img3.png)
+项目内置了 `.github/workflows/book-seat.yml`。工作流每天北京时间 19:45
+启动，在 GitHub Runner 内等待到配置的开放时间，预约两天后的座位，然后自动退出。
 
-### 完成后它将于每天晚上 19:57 与 20:57 自动运行，开始预约。你也可以在 `Actions` 标签中手动运行。
+1. 先在本地运行 GUI，完成登录并添加真实的预约方案和调度。
+2. 将本地 `config/config.yaml` 中的 `plans`、`schedules` 复制到
+   `config/ci.yaml`，清空其中的 `login_name` 和 `password`。
+3. 检查 `config/ci.yaml` 中不存在“替换为……”占位文本，然后把调度的
+   `enabled` 改为 `true` 并推送到 GitHub。
+4. 在 GitHub 仓库的 `Settings → Secrets and variables → Actions` 添加：
+   - `SCHOOL_ID`：学号
+   - `PASSWORD`：统一身份认证密码
+5. 在仓库 `Actions` 页面启用工作流，并先用 `Run workflow` 手动验证一次。
 
-### ❗Notice：由于GitHub不能保证cron完全准时，故该项目不适合用作抢座脚本。
+工作流的 cron 显式使用 `Asia/Shanghai` 时区。
+`config/ci.yaml` 只保存座位和调度，不应提交账号、密码或 Cookie。
 
-# 致谢
-- [杭州电子科技大学健康打卡脚本](https://github.com/YeQiuO/HDU_AUTO_PUNCH)
+> GitHub 定时任务可能延迟。`--once` 模式如果在开放时间之后才启动，会立即
+> 尝试预约；没有匹配两天后日期的已启用调度时会正常退出，不发送预约请求。
 
-# 写在最后
-这个简单的脚本伴我度过了在图书馆的日日夜夜，而如今终于抵达告别的码头。本来只是为了我能抢到座位而写的脚本，没想到在这几年间也多多少少帮了一些同学的忙，对此我深表荣幸。如今我即将离开校园，无法再更新本项目，对此本人感到非常抱歉。也在此祝愿各位热爱在图书馆学习的同学，*当知识织就的茧房温柔剥落，你在图书馆沉淀的岁月自会羽化成风，托起你向青空而去的锋利轨迹。*
+最后根据软件提示登录、查看使用说明。
+
+本脚本基于https://github.com/LittleHeroZZZX/hdu-library-killer改进
+
+最后请各位善用脚本，祝愿各位校友前途似锦，终成所愿。
