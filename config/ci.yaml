@@ -5,24 +5,22 @@ user:
   password: ""
   org_id: "104"
 
-# First configure a real plan locally with the GUI, then copy its values here.
 plans:
-  - id: "example_plan"
-    room_name: "替换为实际房间名"
-    floor_name: "替换为实际楼层名"
-    begin_time: "08:00:00"
-    duration_hours: 4
+  - id: "daily_seat_216"
+    room_name: "自定义"
+    floor_name: "自定义"
+    begin_time: "10:00:00"
+    duration_hours: 11
     seats:
-      - seat_id: "替换为实际座位ID"
-        seat_num: "替换为显示座位号"
+      - seat_id: "63112"
+        seat_num: "216"
 
-# Keep enabled=false until every placeholder above has been replaced.
 # target_weekdays uses 1=Monday through 7=Sunday for the target seat date.
 schedules:
   - mode: weekdays
     target_weekdays: [1, 2, 3, 4, 5, 6, 7]
-    plan_ids: ["example_plan"]
-    enabled: false
+    plan_ids: ["daily_seat_216"]
+    enabled: true
 
 settings:
   interval: 5

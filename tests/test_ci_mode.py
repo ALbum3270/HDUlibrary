@@ -5,6 +5,7 @@ from datetime import datetime
 from unittest.mock import patch
 
 from seathunter.config.manager import ConfigManager
+from seathunter.models.booking_result import BookingResult
 from seathunter.models.schedule import DateMapping, Schedule
 from seathunter.scheduler.one_shot import (
     booking_open_at,
@@ -83,6 +84,15 @@ class CredentialOverrideTests(unittest.TestCase):
 
             with open(config_path, "r", encoding="utf-8") as config_file:
                 self.assertNotIn("secret-password", config_file.read())
+
+
+class BookingResultTests(unittest.TestCase):
+    def test_existing_reservation_is_an_idempotent_success(self):
+        result = BookingResult.from_api_response(
+            {"CODE": "ParamError", "MESSAGE": "已有预约，请勿重复预约！"}
+        )
+
+        self.assertTrue(result.success)
 
 
 if __name__ == "__main__":

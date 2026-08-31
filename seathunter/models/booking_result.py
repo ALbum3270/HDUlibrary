@@ -34,8 +34,12 @@ class BookingResult:
                           room_name: str = None, target_date: str = None) -> "BookingResult":
         code = resp.get("CODE", "unknown")
         message = resp.get("MESSAGE", "")
+        # The API reports an existing reservation as ParamError.  For an
+        # idempotent automation run this is already the desired end state and
+        # must stop retries instead of hammering the endpoint.
+        success = code == "ok" or "已有预约" in str(message)
         return cls(
-            success=(code == "ok"),
+            success=success,
             code=code,
             message=message,
             plan_id=plan_id,
