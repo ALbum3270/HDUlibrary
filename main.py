@@ -374,6 +374,9 @@ def run_once(config_path: str) -> int:
         session_manager=session_mgr,
         interval=int(settings["interval"]),
         max_try_times=int(settings["max_try_times"]),
+        burst_interval=settings.get("burst_interval"),
+        burst_from=settings.get("burst_from"),
+        burst_to=settings.get("burst_to"),
     )
     history = HistoryLogger()
 
