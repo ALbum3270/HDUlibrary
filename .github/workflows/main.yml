@@ -3,7 +3,7 @@ name: HDU Library SeatHunter
 on:
   workflow_dispatch:
   schedule:
-    - cron: '33 13 * * *'
+    - cron: '0 8 * * *'    # 16:00 CST; 4h pad before the 20:00 booking window
 
 permissions:
   contents: read
@@ -15,7 +15,7 @@ concurrency:
 jobs:
   book:
     runs-on: ubuntu-latest
-    timeout-minutes: 330
+    timeout-minutes: 300
     env:
       TZ: Asia/Shanghai
       PYTHONUNBUFFERED: "1"
