@@ -266,9 +266,14 @@ def run_daemon(config_path: str):
         room_cache.stop_background_refresh()
 
 
+# Seconds before the booking window to re-validate the session. A CI run may
+# wait hours between login and booking; the cached cookie can expire meanwhile.
+SESSION_REFRESH_LEAD = 300
+
+
 def run_once(config_path: str) -> int:
     """Run one booking window and exit with a CI-friendly status code."""
-    from datetime import datetime
+    from datetime import datetime, timedelta
 
     from seathunter.logging_.logger import setup_logging
     from seathunter.logging_.history import HistoryLogger
@@ -346,6 +351,20 @@ def run_once(config_path: str) -> int:
             target_date.strftime("%Y-%m-%d"),
             open_at.strftime("%Y-%m-%d %H:%M:%S"),
         )
+        # The runner starts hours early to absorb the Actions dispatch delay,
+        # so refresh the session just before firing rather than booking with
+        # a cookie obtained hours ago.
+        refresh_at = open_at - timedelta(seconds=SESSION_REFRESH_LEAD)
+        if datetime.now() < refresh_at:
+            wait_until(refresh_at)
+            success, error_type = session_mgr.login()
+            if not success:
+                logger.error("Session refresh failed: %s", error_type)
+                append_github_summary(
+                    ["## SeatHunter", "", f"Session refresh failed: {error_type}"]
+                )
+                return 1
+            logger.info("Session refreshed: uid=%s", session_mgr.uid)
         wait_until(open_at)
     else:
         logger.warning("Booking window has already opened; starting immediately")

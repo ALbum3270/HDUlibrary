@@ -24,9 +24,13 @@ schedules:
 
 settings:
   interval: 5
-  max_try_times: 60
+  # ~5.5s per attempt, so 300 attempts span roughly 19:51 -> 20:18.
+  max_try_times: 300
   auto_relogin: true
-  booking_open_time: "20:00:00"
+  # Seats are released at 20:00 sharp. Start firing 9 minutes early so a
+  # request is already in flight the moment the window opens; this mirrors
+  # the pre-rewrite script, which fired from 19:51 until 20:15.
+  booking_open_time: "19:51:00"
 
 api:
   base_url: "https://hdu.huitu.zhishulib.com"
