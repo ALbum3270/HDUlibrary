@@ -3,7 +3,7 @@ name: HDU Library SeatHunter
 on:
   workflow_dispatch:
   schedule:
-    - cron: '45 11 * * *'
+    - cron: '0 9 * * *'   # 17:00 Asia/Shanghai; padded ~3h for GitHub schedule queue delay
 
 permissions:
   contents: read
@@ -15,7 +15,7 @@ concurrency:
 jobs:
   book:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 330
     env:
       TZ: Asia/Shanghai
       PYTHONUNBUFFERED: "1"
