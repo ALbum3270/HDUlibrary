@@ -3,7 +3,7 @@ name: HDU Library SeatHunter
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0/5 * * * *"
+    - cron: '12 11 * * *'
 
 permissions:
   contents: read
