@@ -3,8 +3,7 @@ name: HDU Library SeatHunter
 on:
   workflow_dispatch:
   schedule:
-    - cron: "45 19 * * *"
-      timezone: "Asia/Shanghai"
+    - cron: '52 13 * * *'
 
 permissions:
   contents: read
