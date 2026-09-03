@@ -1,7 +1,7 @@
 import os
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from seathunter.config.manager import ConfigManager
@@ -119,3 +119,20 @@ class BurstIntervalTests(unittest.TestCase):
             self.assertEqual(runner.current_interval(), 5)
             fake.now.return_value = datetime(2026, 9, 2, 20, 5, 0)
             self.assertEqual(runner.current_interval(), 5)
+
+
+class BookingDeadlineTests(unittest.TestCase):
+    def test_named_setting_appears_in_the_error(self):
+        with self.assertRaises(ValueError) as ctx:
+            booking_open_at(datetime(2026, 9, 3), "8pm", "booking_deadline")
+        self.assertIn("settings.booking_deadline", str(ctx.exception))
+
+    def test_run_booking_stops_once_the_deadline_passes(self):
+        runner = BookingRunner(
+            api_client=None, session_manager=None, interval=0, max_try_times=50,
+        )
+        past = datetime.now() - timedelta(seconds=1)
+        results = runner.run_booking(
+            plans=[object()], target_date=datetime(2026, 9, 5), deadline=past,
+        )
+        self.assertEqual(results, [])

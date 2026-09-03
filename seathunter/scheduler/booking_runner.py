@@ -63,7 +63,8 @@ class BookingRunner:
 
     def run_booking(self, plans: List[Plan], target_date: datetime,
                     on_result: Optional[Callable[[BookingResult], None]] = None,
-                    on_attempt: Optional[Callable[[int, int], None]] = None) -> List[BookingResult]:
+                    on_attempt: Optional[Callable[[int, int], None]] = None,
+                    deadline: Optional[datetime] = None) -> List[BookingResult]:
         """Execute booking for all plans targeting a specific date.
 
         Args:
@@ -81,6 +82,11 @@ class BookingRunner:
         for retry in range(self.max_try_times):
             if self._cancelled:
                 logger.info("Booking run cancelled")
+                break
+
+            if deadline is not None and datetime.now() >= deadline:
+                logger.info("Booking deadline %s reached, stopping",
+                            deadline.strftime("%H:%M:%S"))
                 break
 
             if on_attempt:

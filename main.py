@@ -329,6 +329,34 @@ def run_once(config_path: str) -> int:
         )
         return 1
 
+    settings = config.get_settings()
+    try:
+        open_at = booking_open_at(datetime.now(), settings["booking_open_time"])
+        deadline = None
+        if settings.get("booking_deadline"):
+            deadline = booking_open_at(
+                datetime.now(), settings["booking_deadline"], "booking_deadline"
+            )
+    except ValueError as exc:
+        logger.error("%s", exc)
+        return 1
+
+    # A delayed Actions dispatch can land after the window has closed. Bail out
+    # before logging in rather than firing requests that cannot win a seat.
+    if deadline is not None and datetime.now() >= deadline:
+        message = (
+            f"Run started at {datetime.now():%H:%M:%S}, after the "
+            f"{deadline:%H:%M:%S} cutoff; skipping without booking."
+        )
+        logger.error(message)
+        append_github_summary([
+            "## SeatHunter booking skipped",
+            "",
+            f"- Target date: {target_date:%Y-%m-%d}",
+            f"- {message}",
+        ])
+        return 1
+
     session_mgr = SessionManager(config)
     session_mgr.init_session()
     success, error_type = session_mgr.login()
@@ -337,13 +365,6 @@ def run_once(config_path: str) -> int:
         append_github_summary(["## SeatHunter", "", f"Login failed: {error_type}"])
         return 1
     logger.info("Login successful: uid=%s", session_mgr.uid)
-
-    settings = config.get_settings()
-    try:
-        open_at = booking_open_at(datetime.now(), settings["booking_open_time"])
-    except ValueError as exc:
-        logger.error("%s", exc)
-        return 1
 
     if datetime.now() < open_at:
         logger.info(
@@ -391,6 +412,7 @@ def run_once(config_path: str) -> int:
         plans=plans,
         target_date=target_date,
         on_result=on_result,
+        deadline=deadline,
     )
     successful = next((result for result in results if result.success), None)
     if successful:

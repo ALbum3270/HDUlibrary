@@ -32,13 +32,14 @@ def target_date_for_run(now: datetime) -> datetime:
     )
 
 
-def booking_open_at(now: datetime, open_time: str) -> datetime:
-    """Build today's booking-open datetime from an HH:MM:SS setting."""
+def booking_open_at(now: datetime, open_time: str,
+                    setting_name: str = "booking_open_time") -> datetime:
+    """Build today's datetime for an HH:MM:SS setting."""
     try:
         parsed = datetime.strptime(open_time, "%H:%M:%S")
     except (TypeError, ValueError) as exc:
         raise ValueError(
-            f"Invalid settings.booking_open_time: {open_time!r}; expected HH:MM:SS"
+            f"Invalid settings.{setting_name}: {open_time!r}; expected HH:MM:SS"
         ) from exc
     return now.replace(
         hour=parsed.hour,
