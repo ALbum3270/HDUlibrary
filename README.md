@@ -43,9 +43,10 @@ python build.py
 
 ## GitHub Actions 自动预约
 
-项目内置了 `.github/workflows/main.yml`。工作流每天北京时间 16:00
-启动，在 GitHub Runner 内等待到配置的开放时间（默认 20:00），预约两天后的
-座位，然后自动退出。
+项目内置了 `.github/workflows/main.yml`。工作流每天北京时间 15:00
+启动，在 GitHub Runner 内等到 `booking_open_time`（19:51）开始发请求，抢
+两天后的座位，到 `booking_deadline`（20:15）收手退出。座位在 20:00 整放号，
+提前 9 分钟开打是为了让请求在放号瞬间已经在飞。
 
 1. 先在本地运行 GUI，完成登录并添加真实的预约方案和调度。
 2. 将本地 `config/config.yaml` 中的 `plans`、`schedules` 复制到
@@ -57,13 +58,17 @@ python build.py
    - `PASSWORD`：统一身份认证密码
 5. 在仓库 `Actions` 页面启用工作流，并先用 `Run workflow` 手动验证一次。
 
-GitHub 的 cron 只接受 UTC，`0 8 * * *` 即北京时间 16:00；工作流里的 `TZ`
+GitHub 的 cron 只接受 UTC，`0 7 * * *` 即北京时间 15:00；工作流里的 `TZ`
 只影响 Runner 内的 Python，不影响触发时刻。
 
-之所以提前 4 小时启动，是因为 GitHub 的定时任务排队延迟很大——本仓库的历史
-记录显示实际触发比标称时间晚 1 到 4 小时，从未准时过。多出来的时间由脚本在
-Runner 内空等，`timeout-minutes: 300` 保证等待期间 job 不会被杀掉。公开仓库
-的 Actions 分钟数免费，空等没有额外成本。
+之所以提前 5 小时启动，是因为 GitHub 的定时任务排队延迟很大——本仓库的历史
+记录显示实际触发比标称时间晚 14 分钟到 4 小时 37 分，从未准时过。多出来的时
+间由脚本在 Runner 内空等，`timeout-minutes: 350` 保证等待期间 job 不会被杀
+掉。公开仓库的 Actions 分钟数免费，空等没有额外成本。
+
+若延迟大到 20:15 之后才启动，脚本会直接退出而不发预约请求，Actions 上显示为
+失败——这表示错过了窗口，而不是抢座失败。GitHub 单个 job 上限 6 小时，所以
+提前量最多只能再加约 30 分钟。
 
 > 公开仓库若连续 60 天没有任何活动，GitHub 会自动停用其定时任务，需要到
 > Actions 页面手动重新启用。
