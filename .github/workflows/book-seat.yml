@@ -3,7 +3,7 @@ name: HDU Library SeatHunter
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 6 * * *'   # 14:30 CST; offset from the primary repo's 15:00
+    - cron: '30 6 * * *'   # 14:30 CST; log in early, then wait for the 20:00 boundary
 
 permissions:
   contents: read
